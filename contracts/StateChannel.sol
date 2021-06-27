@@ -6,74 +6,79 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 contract StateChannel {
     using SafeMath for uint256;
 
-    address payable public sender;      // The account sending payments.
-    address payable public recipient;   // The account receiving the payments.
-    uint256 public expiration;  // Timeout in case the recipient never closes.
+    address payable public firstUser;      // The account sending payments.
+    address payable public secondUser;   // The account receiving the payments.
+    uint256 public expiration;  // Timeout in case the secondUser never closes.
+    uint8 public nonce; // Nonce value for transaction
 
     //============================================================================
     // EVENTS
     //============================================================================
 
-    event ChannelOpened(address sender, address recipient, uint expiration, uint256 deposit);
-    event ChannelClosed(uint256 senderBalance, uint256 recipientBalance);
+    event ChannelOpened(address firstUser, address secondUser, uint expiration, uint256 deposit);
+    event ChannelClosed(uint256 firstUserBalance, uint256 secondUserBalance);
+    event NonceUpdated(uint256 firstUserBalance, uint256 secondUserBalance, bytes signature, uint8 nonce);
 
-    constructor (address payable _recipient, uint256 duration)
+    constructor (address payable _secondUser, uint256 duration)
         payable
     {
         require(msg.value > 0);
-        require(msg.sender != _recipient);
+        require(msg.sender != _secondUser);
 
-        sender = payable(msg.sender);
-        recipient = _recipient;
+        firstUser = payable(msg.sender);
+        secondUser = _secondUser;
         expiration = block.timestamp + duration;
+        nonce = 0;
 
-        emit ChannelOpened(sender, recipient, expiration, msg.value);
+        emit ChannelOpened(firstUser, secondUser, expiration, msg.value);
     }
 
-    function isValidSignature(uint256 amount, bytes memory signature)
+    function isValidSignature(uint256 firstUserBalance, uint256 secondUserBalance, bytes memory signature, uint8 _nonce)
         internal
         view
         returns (bool)
     {
-        bytes32 message = prefixed(keccak256(abi.encodePacked(address(this), amount)));
-        // check that the signature is from the payment sender
-        return recoverSigner(message, signature) == sender;
+        bytes32 message = prefixed(keccak256(abi.encodePacked(address(this), firstUserBalance, secondUserBalance, _nonce)));
+        // check that the signature is from the firstUser or second user
+        return recoverSigner(message, signature) == firstUser || recoverSigner(message, signature) == secondUser;
     }
 
-    /// the recipient can close the channel at any time by presenting a
-    /// signed amount from the sender. the recipient will be sent that amount,
-    /// and the remainder will go back to the sender
-    function close(uint256 amount, bytes memory signature) public {
-        require(msg.sender == recipient);
-        require(isValidSignature(amount, signature));
-
-        uint256 balance = amount;
-        uint256 remainder = 0;
-
-        if (amount > address(this).balance) {
-            balance = address(this).balance;
-        } else {
-            remainder = address(this).balance.sub(balance);
-        }
-
-        recipient.transfer(amount);
-        emit ChannelClosed(remainder, balance);
-        selfdestruct(sender);
+    function challenge(uint256 firstUserBalance, uint256 secondUserBalance, bytes memory signature, uint8 _nonce) public {
+        require(msg.sender == firstUser || msg.sender == secondUser);
+        require(isValidSignature(firstUserBalance, secondUserBalance, signature, _nonce));
+        require(_nonce > nonce);
+        nonce = _nonce;
+        emit NonceUpdated(firstUserBalance, secondUserBalance, signature, _nonce);
     }
 
-    /// the sender can extend the expiration at any time
+
+    /// the Any of the participants can close the channel at any time by presenting a
+    /// signed transaction with a valid nonce. the closing amount would be paid out to each
+    /// participant and any remainder will go back to the firstUser
+    function close(uint256 firstUserBalance, uint256 secondUserBalance, bytes memory signature, uint8 _nonce) public {
+        require(msg.sender == firstUser || msg.sender == secondUser);
+        require(isValidSignature(firstUserBalance, secondUserBalance, signature, _nonce));
+        require(_nonce == nonce);
+        require(address(this).balance > firstUserBalance.add(secondUserBalance));
+        firstUser.transfer(firstUserBalance);
+        secondUser.transfer(secondUserBalance);
+        emit ChannelClosed(firstUserBalance, secondUserBalance);
+        selfdestruct(firstUser);
+    }
+
+    /// the participants can extend the expiration at any time
     function extend(uint256 newExpiration) public {
-        require(msg.sender == sender);
+        require(msg.sender == firstUser  || msg.sender == secondUser);
         require(newExpiration > expiration);
 
         expiration = newExpiration;
     }
 
-    /// if the timeout is reached without the recipient closing the channel,
-    /// then the Ether is released back to the sender.
+    /// if the timeout is reached without the secondUser closing the channel,
+    /// then the Ether is released back to the firstUser.
     function claimTimeout() public {
         require(block.timestamp >= expiration);
-        selfdestruct(sender);
+        selfdestruct(firstUser);
     }
 
     function splitSignature(bytes memory sig)

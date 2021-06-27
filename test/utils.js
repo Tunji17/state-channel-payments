@@ -5,10 +5,10 @@ const util = require('ethereumjs-util');
 // UTILITY FUNCTIONS
 //============================================================================
 
-const constructPaymentMessage = async function (contractAddress, balance) {
+const constructPaymentMessage = async function (contractAddress, firstUserbalance, secondUserBalance, nonce) {
   return abi.soliditySHA3(
-    ["address", "uint256"],
-    [contractAddress, balance]
+    ["address", "uint256", "uint256", "uint8"],
+    [contractAddress, firstUserbalance, secondUserBalance, nonce]
   );
 }
 
@@ -19,8 +19,8 @@ const signMessage = async function (web3, message, accountAddress) {
   );
 }
 
-const isValidSignature = async function (contractAddress, balance, signature, expectedSigner) {
-  let message = await constructPaymentMessage(contractAddress, balance);
+const isValidSignature = async function (contractAddress, firstUserbalance, secondUserBalance, signature, expectedSigner, nonce) {
+  let message = await constructPaymentMessage(contractAddress, firstUserbalance, secondUserBalance, nonce);
   let prefixedMessage = await prefixed(message);
   let signer = await recoverSigner(prefixedMessage, signature);
   return signer.toLowerCase() === util.stripHexPrefix(expectedSigner).toLowerCase();
