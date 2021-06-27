@@ -1,0 +1,21 @@
+{
+  "name": "close-cross-state-channel",
+  "version": "1.0.0",
+  "description": "",
+  "main": "truffle-config.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "truffle migrate --reset && truffle test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {},
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.1.0",
+    "ethereumjs-abi": "^0.6.8",
+    "ethereumjs-util": "^7.0.10"
+  }
+}
